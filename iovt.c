@@ -10,6 +10,53 @@
 #include "vt.h"
 #include <float.h>
 
+int swap_file = 0;
+/*-----------------------------------------------------------------------------*/
+/*---------------------- Routine to swap ENDIAN -------------------------------*/
+/*-------- char *data:    Pointer to the data ---------------------------------*/
+/*-------- int n:         Number of elements to swap --------------------------*/
+/*-------- int m:         Size of single element to swap ----------------------*/
+/*--------                int,float = 4 ---------------------------------------*/
+/*--------                double    = 8 ---------------------------------------*/
+/*-----------------------------------------------------------------------------*/
+void swap_Nbyte(char *data,int n,int m)
+{
+  int i,j;
+  char old_data[16];
+
+  for(j=0;j<n;j++)
+   {
+    memcpy(&old_data[0],&data[j*m],m);
+    for(i=0;i<m;i++)
+        data[j*m+i]=old_data[m-i-1];
+    }
+}
+
+/*------------------------------------------------------------------*/
+/*----------- procedure to swap header if needed -------------------*/
+/*------------------------------------------------------------------*/
+void swap_header()
+{
+   swap_Nbyte((char*)&header.npart,6,4);
+   swap_Nbyte((char*)&header.mass,6,8);
+   swap_Nbyte((char*)&header.time,1,8);
+   swap_Nbyte((char*)&header.redshift,1,8);
+   swap_Nbyte((char*)&header.flag_sfr,1,4);
+   swap_Nbyte((char*)&header.flag_feedback,1,4);
+   swap_Nbyte((char*)&header.npartTotal,6,4);
+   swap_Nbyte((char*)&header.flag_cooling,1,4);
+   swap_Nbyte((char*)&header.num_files,1,4);
+   swap_Nbyte((char*)&header.BoxSize,1,8);
+   swap_Nbyte((char*)&header.Omega0,1,8);
+   swap_Nbyte((char*)&header.OmegaLambda,1,8);
+   swap_Nbyte((char*)&header.HubbleParam,1,8);
+   swap_Nbyte((char*)&header.flag_stellarage,1,4);
+   swap_Nbyte((char*)&header.flag_metals,1,4);
+   /*
+   swap_Nbyte((char*)&header.npartTotalHighWord,6,4);
+   swap_Nbyte((char*)&header.flag_entropy_instead_u,1,4);
+   */
+}
 
 /*Generic read functions*/
 void
@@ -116,6 +163,7 @@ read_header_gadget (void)
 
 #define SKIP {fread(&blk,sizeof(int),1,filein);}
 #define SKIP2 {fread(&blk2,sizeof(int),1,filein);}
+#define SHEAD {fseek(filein, 16, SEEK_CUR);}
 
 #ifdef MULTIMASS
   if (ThisTask == root)
@@ -150,21 +198,36 @@ read_header_gadget (void)
 	}
 
       SKIP;
+      if (blk != 256 || blk != 8)
+      {
+        swap_Nbyte((char*)&blk, 1, 4);
+        if (blk == 256 || blk == 8)
+          swap_file = 1;
+        else
+        {
+          printf("incorrect header format\n");
+          stopcode();
+        }
+      }
+      if (blk == 8)
+        SHEAD;
       fread (&header, sizeof (header), 1, filein);
+      if (swap_file == 1)
+        swap_header();
       SKIP2;
 
-      if (blk != 256 || blk2 != 256)
-	{
-	  printf ("incorrect header format\n");
-	  stopcode ();
-	}
+  //     if (blk != 256 || blk2 != 256)
+	// {
+	//   printf ("incorrect header format\n");
+	//   stopcode ();
+	// }
 
       NumPart = header.npartTotal[GADGET_PTYPE];
       lbox = header.BoxSize;
 
       printf ("NpartTotal=");
       for (i = 0; i < 6; i++)
-	printf ("%d ", header.npartTotal[i]);
+	     printf ("%d ", header.npartTotal[i]);
       printf ("\n");
 
       printf ("Numpart=%d  lbox=%8.3f num_files=%d\n", NumPart, lbox,
@@ -706,7 +769,7 @@ read_part_gadget (void)
       globalskip = 0;
       sprintf (filenew, "%s", InputFile);
       if (nfiles > 1)
-	sprintf (filenew, "%s.%d", InputFile, j);
+      	sprintf (filenew, "%s.%d", InputFile, j);
 
       if (ThisTask == root)
 	{
@@ -717,14 +780,29 @@ read_part_gadget (void)
 	    }
 
 	  SKIP;
+    if (blk != 256 || blk != 8)
+    {
+      swap_Nbyte((char*)&blk, 1, 4);
+      if (blk == 256 || blk == 8)
+        swap_file = 1;
+      else
+      {
+        printf("incorrect header format\n");
+        stopcode();
+      }
+    }
+    if (blk == 8)
+      SHEAD;
 	  fread (&header, sizeof (header), 1, filein);
+    if (swap_file == 1)
+      swap_header();
 	  SKIP2;
 
-	  if (blk != 256 || blk2 != 256)
-	    {
-	      printf ("incorrect header format\n");
-	      stopcode ();
-	    }
+	  // if (blk != 256 || blk2 != 256)
+	  //   {
+	  //     printf ("incorrect header format\n");
+	  //     stopcode ();
+	  //   }
 	  numthisfile = header.npart[GADGET_PTYPE];
 	  typeskip = 0;		/*seek due particle types */
 	  for (i = 0; i < GADGET_PTYPE; i++)
@@ -748,9 +826,11 @@ read_part_gadget (void)
 	  member = malloc (currsize * sizeof (int));
 	  if (ThisTask == root)
 	    {
-	      hsize = 4 + 256 + 4;
-	      loopsize =
-		(typeskip + globalskip) * sizeof (float) * 3 + sizeof (int);
+        if (blk == 8)
+          hsize = 16 + 8 +256;
+        else
+          hsize = 4 + 256 + 4;
+	      loopsize = (typeskip + globalskip) * sizeof (float) * 3 + sizeof (int);
 	      if (globalskip == 0)
 		{
 		  fseek (filein, hsize, SEEK_SET);
@@ -760,6 +840,8 @@ read_part_gadget (void)
 		}
 	      fseek (filein, hsize + loopsize, SEEK_SET);
 	      fread (buffer, sizeof (float), currsize * 3, filein);
+        if (swap_file == 1)
+          swap_Nbyte((char*)buffer, currsize*3, 4);
 	    }
 	  count = currsize * 3;
 	  MPI_Bcast (buffer, count, MPI_FLOAT, root, MPI_COMM_WORLD);
