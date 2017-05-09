@@ -16,6 +16,7 @@
 /*#define COMPUTEGRID*/
 #define GRIDSIZE 64
 #define GADGET_PTYPE 1
+#define LONGID
 #define QHULLOPTIONS "QJ"
 /*#define LOWMEMORY*/
 #define VERBOSE
@@ -27,23 +28,23 @@
  * For box volumes and periodic 0 is recommended,
  *   0 == rectangular blocks where Ntask must be a power of 2.
  * For irregular volumes 1 is recommended,
- *   1 == split volume along the larger axis in Ntask blocks, 
+ *   1 == split volume along the larger axis in Ntask blocks,
  *   Ntask can be any number. This disable PERIODIC.
  *
  * BOX: volume is a box
  * Set if volume is a box, it is automatically set for some
- * formats (gadget, rockstar). 
+ * formats (gadget, rockstar).
  * For boxes, DOMAINTYPE 0 is recommended.
  *
  * PERIODIC: Periodic conditions
  * Only used if BOX volume is defined
  *
- * MULTIMASS: if set, read an additional column of data with 
+ * MULTIMASS: if set, read an additional column of data with
  * particle masses. (for GADGET it is automatically set, and
  * for Rockstar it is enabled)
  *
  * BUFFERSIZE: number of particles to read per slab
- * Notices a larger value requires more temporary memory to 
+ * Notices a larger value requires more temporary memory to
  * preallocate particles. Default(10000)
  *
  * BORDERFACTOR: Thickness boundary particles around each cell
@@ -57,27 +58,31 @@
  *
  * COMPUTEGRID: Compute density in a grid using two methods, count
  * particles in each cell, and using average voronoi density. Grid
- * size is defined by GRIDSIZE parameter and must be divisible by 
+ * size is defined by GRIDSIZE parameter and must be divisible by
  * domain decomposition.
- *  
- * GADGET_PTYPE: If read gadget file, it set the particle type to use. 
+ *
+ * GADGET_PTYPE: If read gadget file, it set the particle type to use.
+ * 0 gas; 1, dark matter; 2 buldge; 3 disk; 4 star; 5 bh.
+ *
+ * LONGID: if read gadget file with ID type is (unsigned) long long.
+ * Only need to set this when MULTIMASS is enabled.
  *
  * QHULLOPTIONS: Qhull additional parameters, default "QJ", the option
  * "Qbb" is more precise but fail if repeated coordinates found.
  *
- * LOWMEMORY: Reduces total memory consumption to ~ 2/3 factor but 
+ * LOWMEMORY: Reduces total memory consumption to ~ 2/3 factor but
  * doubles execution time.
  *
  * VERBOSE: write additional info on screen
- * 
- * COMPUTEGRAD: Compute density gradient vectors on VT, write 
+ *
+ * COMPUTEGRAD: Compute density gradient vectors on VT, write
  * if WRITEDENSITY defined.
  *
- * AUTOBORDER: Automatically increase boundary particles thickness (given 
- * initially by BORDERFACTOR) between two tasks, in the case there are too 
- * few boundary particles for correct VT computation. This paremeter may 
+ * AUTOBORDER: Automatically increase boundary particles thickness (given
+ * initially by BORDERFACTOR) between two tasks, in the case there are too
+ * few boundary particles for correct VT computation. This paremeter may
  * be helpful for very anisotropic particle distribution, but it takes more
- * computation time. If your data is well behaved with a given BORDERFACTOR, 
+ * computation time. If your data is well behaved with a given BORDERFACTOR,
  * set this parameter off. It requires BORDERFACTOR > 1.
- *  
+ *
  * */

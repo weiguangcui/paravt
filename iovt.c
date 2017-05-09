@@ -167,17 +167,22 @@ read_header_gadget (void)
 
 #ifdef MULTIMASS
   if (ThisTask == root)
-    printf ("MULTIMASS NOT AVAILABLE FOR GADGET FILES.\n");
-  stopcode ();
+    printf ("MULTIMASS IS NOW ENABLED FOR GADGET FILES.\n");
+  // stopcode ();
 #endif
 
   if (ThisTask == root)
     {
 #ifdef GADGET_PTYPE
-      printf ("Reading Gadget file with particle type %d ...\n",
-	      GADGET_PTYPE);
+      if (GADGET_PTYPE >= 0 && GADGET_PTYPE < 6)
+        printf ("Reading Gadget file with particle type %d ...\n", GADGET_PTYPE);
+      else
+      {
+        printf ("Gadget particle type %d is not accepted...\n", GADGET_PTYPE);
+        stopcode();
+      }
 #else
-      printf ("Gadget format required define GADGET_PTYPE in config.h\n");
+      printf ("Gadget format required define GADGET_PTYPE in config.h.\n");
       stopcode ();
 #endif
 
@@ -744,107 +749,160 @@ read_part_gadget (void)
   int i, count, ii, jj, kk, j;
   float t0, t1, t2, t3;
   int blk, blk2, hsize, loopsize;
-  float *rbuf;
-  int nfiles, numthisfile, typeskip, globalskip;
-  unsigned int numtotal;
+  float *mbuf;
+  int nfiles, numthisfile, typeskip, globalskip, bufrank, ntotalthisfile;
+#ifdef LONGID
+  unsigned long long numtotal=0;
+#else
+  unsigned int numtotal=0;
+#endif
   char filenew[300];
 
+#ifdef MULTIMASS
+  bufrank = 4;
+#else
+  bufrank = 3;
+#endif
 
   if (ThisTask == root)
-    {
-      nfiles = header.num_files;
+  {
+    nfiles = header.num_files;
+    if (GADGET_PTYPE >= 0) && (GADGET_PTYPE < 6)
       numtotal = header.npartTotal[GADGET_PTYPE];
-      printf ("Number files=%d numtotal=%d\n", nfiles, numtotal);
+    else
+    {
+      for (i = 0; i < 6; i++)
+        numtotal += header.npartTotal[i];
     }
+#ifdef LONGID
+    printf ("Number files=%d numtotal=%lld\n", nfiles, numtotal);
+#else
+    printf ("Number files=%d numtotal=%d\n", nfiles, numtotal);
+#endif
+  }
   MPI_Bcast (&nfiles, 1, MPI_INT, root, MPI_COMM_WORLD);
   MPI_Bcast (&numtotal, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);
-
 
   globalcount = 0;		/*read particles */
   globalindex = 0;		/*current assigned particles this */
 
-
   for (j = 0; j < nfiles; j++)
     {
       globalskip = 0;
+      numthisfile = 0;
+      ntotalthisfile = 0;
+
       sprintf (filenew, "%s", InputFile);
       if (nfiles > 1)
-      	sprintf (filenew, "%s.%d", InputFile, j);
+      	 sprintf (filenew, "%s.%d", InputFile, j);
 
       if (ThisTask == root)
-	{
-	  if ((filein = fopen (filenew, "r")) == NULL)
-	    {
-	      printf ("Fail open file: %s\n", filenew);
-	      stopcode ();
-	    }
-
-	  SKIP;
-    if (blk != 256 || blk != 8)
-    {
-      swap_Nbyte((char*)&blk, 1, 4);
-      if (blk == 256 || blk == 8)
-        swap_file = 1;
-      else
       {
-        printf("incorrect header format\n");
-        stopcode();
-      }
-    }
-    if (blk == 8)
-      SHEAD;
-	  fread (&header, sizeof (header), 1, filein);
-    if (swap_file == 1)
-      swap_header();
-	  SKIP2;
+        if ((filein = fopen (filenew, "r")) == NULL)
+	      {
+          printf ("Fail open file: %s\n", filenew);
+          stopcode ();
+        }
 
-	  // if (blk != 256 || blk2 != 256)
-	  //   {
-	  //     printf ("incorrect header format\n");
-	  //     stopcode ();
-	  //   }
-	  numthisfile = header.npart[GADGET_PTYPE];
-	  typeskip = 0;		/*seek due particle types */
-	  for (i = 0; i < GADGET_PTYPE; i++)
-	    typeskip += header.npart[i];	/*particles to skip */
-	  printf ("Reading file=%d numthisfile=%d skiptype=%d\n", j,
-		  numthisfile, typeskip);
-	}			/*root */
+        SKIP;
+        if (blk != 256 && blk != 8)
+        {
+          swap_Nbyte((char*)&blk, 1, 4);
+          if (blk == 256 || blk == 8)
+            swap_file = 1;
+          else
+          {
+            printf("incorrect header format\n");
+            stopcode();
+          }
+        }
+
+        if (blk == 8)
+          SHEAD;
+
+        fread (&header, sizeof (header), 1, filein);
+        if (swap_file == 1)
+          swap_header();
+        SKIP2;
+
+        typeskip = 0;		/*seek due particle types */
+        numthisfile = header.npart[GADGET_PTYPE];
+        for (i = 0; i < 6; i++)
+        {
+          ntotalthisfile += header.npart[i];  /*total particles */
+          if i < GADGET_PTYPE
+            typeskip += header.npart[i];	/*particles to skip */
+        }
+
+        printf ("Reading file=%d numthisfile=%d skiptype=%d\n", j, numthisfile, typeskip);
+      }			/*root */
 
       MPI_Bcast (&numthisfile, 1, MPI_INT, root, MPI_COMM_WORLD);
       MPI_Bcast (&typeskip, 1, MPI_INT, root, MPI_COMM_WORLD);
 
       loopcount = 0;		/*number blocks reads */
       while (globalskip < numthisfile)
-	{
-	  localindex = 0;	/*part in this task in this buffer loop */
-	  if ((numthisfile - globalskip) > BUFFERSIZE)
-	    currsize = BUFFERSIZE;
-	  if ((numthisfile - globalskip) <= BUFFERSIZE)
-	    currsize = numthisfile - globalskip;
-	  buffer = malloc (currsize * sizeof (float) * 3);
-	  member = malloc (currsize * sizeof (int));
-	  if (ThisTask == root)
-	    {
-        if (blk == 8)
-          hsize = 16 + 8 +256;
+      {
+        localindex = 0;	/*part in this task in this buffer loop */
+
+        if ((numthisfile - globalskip) > BUFFERSIZE)
+          currsize = BUFFERSIZE;
+        // if ((numthisfile - globalskip) <= BUFFERSIZE)
         else
-          hsize = 4 + 256 + 4;
-	      loopsize = (typeskip + globalskip) * sizeof (float) * 3 + sizeof (int);
-	      if (globalskip == 0)
-		{
-		  fseek (filein, hsize, SEEK_SET);
-		  SKIP;
-		  /*printf ("blk count=%d bytes_seek=%d\n",
-		     blk / sizeof (float) / 3, hsize + loopsize); */
-		}
-	      fseek (filein, hsize + loopsize, SEEK_SET);
-	      fread (buffer, sizeof (float), currsize * 3, filein);
-        if (swap_file == 1)
-          swap_Nbyte((char*)buffer, currsize*3, 4);
-	    }
+          currsize = numthisfile - globalskip;
+
+        buffer = malloc (currsize * sizeof (float) * 3);
+        member = malloc (currsize * sizeof (int));
+#ifdef MULTIMASS
+        mbuf   = malloc (currsize * sizeof (float));
+#endif
+
+        if (ThisTask == root)
+        {
+          if (blk == 8)
+            hsize = 16 + 8 + 256 + 16;  /*HEAD (head+data), POS (head)*/
+          else
+            hsize = 4 + 256 + 4;
+
+          loopsize = (typeskip + globalskip) * sizeof (float) * 3 + sizeof (int);
+          // if (globalskip == 0)
+          // {
+          //   fseek (filein, hsize, SEEK_SET);
+          //   SKIP;
+      		//   /*printf ("blk count=%d bytes_seek=%d\n", blk / sizeof (float) / 3, hsize + loopsize); */
+          // }
+
+          fseek (filein, hsize + loopsize, SEEK_SET);
+          fread (buffer, sizeof (float), currsize * 3, filein);
+          if (swap_file == 1)
+            swap_Nbyte((char*)buffer, currsize*3, 4);
+
+#ifdef MULTIMASS
+          if (blk == 8)
+            hsize = 16 + 8 + 256 + 2 * (16 + 8 + ntotalthisfile * sizeof (float) * 3) + 16 + 16; /*HEAD, POS, VEL (all), ID (head, data is skipped below), MASS(head)*/
+          else
+            hsize = 8 + 256 + 2 * (8 + ntotalthisfile * sizeof (float) * 3);
+
+#ifdef LONGID
+          hsize += 8 + ntotalthisfile * sizeof (unsigned long long);
+#else
+          hsize += 8 + ntotalthisfile * sizeof (int);
+          // fseek (filein, hsize + ntotalthisfile * sizeof (int) + sizeof (int), SEEK_SET);
+#endif
+          /*Now MASS block*/
+          loopsize = (typeskip + globalskip) * sizeof (float) + sizeof (int);
+          fseek (filein, hsize + loopsize, SEEK_SET);
+          fread (mbuf, sizeof (float), currsize, filein);
+          if (swap_file == 1)
+            swap_Nbyte((char*)mbuf, currsize, 4);
+#endif
+        }
+
 	  count = currsize * 3;
 	  MPI_Bcast (buffer, count, MPI_FLOAT, root, MPI_COMM_WORLD);
+#ifdef MULTIMASS
+	  MPI_Bcast (mbuf, currsize, MPI_FLOAT, root, MPI_COMM_WORLD);
+#endif
 	  dx = lbox / spx;
 	  dy = lbox / spy;
 	  dz = lbox / spz;
@@ -879,13 +937,11 @@ read_part_gadget (void)
 	    {
 	      if (locbuffer == NULL)
 		{
-		  locbuffer = malloc (localindex * sizeof (float) * 3);
+		  locbuffer = malloc (localindex * sizeof (float) * bufrank);
 		}
 	      else
 		{
-		  locbuffer =
-		    realloc (locbuffer,
-			     (globalindex + localindex) * sizeof (float) * 3);
+		  locbuffer = realloc (locbuffer, (globalindex + localindex) * sizeof (float) * bufrank);
 		}
 	      if (locind == NULL)
 		{
@@ -893,9 +949,7 @@ read_part_gadget (void)
 		}
 	      else
 		{
-		  locind =
-		    realloc (locind,
-			     (globalindex + localindex) * sizeof (int));
+		  locind = realloc (locind, (globalindex + localindex) * sizeof (int));
 		}
 	      count = 0;
 	      for (i = 0; i < currsize; i++)
@@ -903,23 +957,28 @@ read_part_gadget (void)
 		  if (member[i] == ThisTask)
 		    {
 		      locind[globalindex + count] = globalcount + i;
-		      locbuffer[(globalindex + count) * 3] = buffer[i * 3];
-		      locbuffer[(globalindex + count) * 3 + 1] =
-			buffer[i * 3 + 1];
-		      locbuffer[(globalindex + count) * 3 + 2] =
-			buffer[i * 3 + 2];
+		      locbuffer[(globalindex + count) * bufrank] = buffer[i * 3];
+		      locbuffer[(globalindex + count) * bufrank + 1] = buffer[i * 3 + 1];
+		      locbuffer[(globalindex + count) * bufrank + 2] = buffer[i * 3 + 2];
+#ifdef MULTIMASS
+		      locbuffer[(globalindex + count) * bufrank + 3] = mbuf[i];
+#endif
 		      count++;
 		    }
 		}
 	    }
 	  free (buffer);
 	  free (member);
+#ifdef MULTIMASS
+    free (mbuf);
+#endif
 	  globalindex = globalindex + localindex;
 	  globalcount = globalcount + currsize;
 	  globalskip = globalskip + currsize;
 	  NumThis = globalindex;
 	  loopcount++;
 	}			/*end loop */
+
       MPI_Reduce (&NumThis, &i, 1, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
 #ifdef VERBOSE
       printf ("Task=%3d Npthistot=%9d\n", ThisTask, NumThis);
