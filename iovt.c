@@ -767,7 +767,7 @@ read_part_gadget (void)
   if (ThisTask == root)
   {
     nfiles = header.num_files;
-    if (GADGET_PTYPE >= 0) && (GADGET_PTYPE < 6)
+    if (GADGET_PTYPE >= 0 && GADGET_PTYPE < 6)
       numtotal = header.npartTotal[GADGET_PTYPE];
     else
     {
@@ -830,7 +830,7 @@ read_part_gadget (void)
         for (i = 0; i < 6; i++)
         {
           ntotalthisfile += header.npart[i];  /*total particles */
-          if i < GADGET_PTYPE
+          if (i < GADGET_PTYPE)
             typeskip += header.npart[i];	/*particles to skip */
         }
 
